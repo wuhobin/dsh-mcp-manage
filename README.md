@@ -1,6 +1,6 @@
 # dsh-mcp-manage
 
-> **Label: `dsh plugin`** · A [DeepSeek Harness (DSH)][dsh] **static market plugin** that adds an **MCP 服务** management page in **Settings**.
+> **Label: `dsh plugin`** · A [DeepSeek Harness (DSH)][dsh] **static plugin** that adds an **MCP 服务** management page in **Settings**.
 
 Manage the MCP servers DSH registers through `cordis.patch.yml`: list / add / edit / delete each MCP service, and — most importantly — **run a real MCP `initialize` connection handshake** against every server so you can see at a glance whether each MCP service connects normally.
 
@@ -35,8 +35,8 @@ The package carries a `dsh.bundle.patch` (`static/cordis.patch.yml`) that insert
 so DSH's bundle layer turns it into an **active loader entry** automatically. You only need to add the dependency
 once; the UI page and routes appear after a restart.
 
-> You can also install it through the built-in **插件市场** (plugin market, `dshmarket`) once this package is
-> registered in a market registry — the market's `pnpm add` path is the same mechanism underneath.
+> Its manifest is also compatible with the built-in plugin market (`dshmarket`), so it **could** be listed there too —
+> but this package is primarily distributed as an npm package: `pnpm add dsh-mcp-manage`.
 
 ---
 
@@ -86,9 +86,10 @@ The host derives the runtime layout the same way the dynamic host did, but with 
 
 ---
 
-## Package manifest (what makes it market-installable)
+## Package manifest (what makes it a static, installable plugin)
 
-`package.json` satisfies the exact contracts the plugin market and the client loader validate:
+`package.json` satisfies the exact contract the DSH client loader validates, so the package loads as a real static
+plugin once installed (and would also be eligible for a plugin-market listing):
 
 - `main` → `./static/index.js` (host entry artifact).
 - `exports["./client"]` → `./static/client.js` (browser bundle).
