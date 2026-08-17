@@ -1,46 +1,46 @@
 # awesome-dsh-plugin.com — 市场注册材料 (dsh-mcp-manage)
 
-> 依据：`dshmarket` 自带、2026-08-15 更新的 `data/registry-snapshot.json`（457 个条目）逐字段对齐的注册模板。
-> 目标订阅源：`https://awesome-dsh-plugin.com/plugins.json`。
-> 归档 `category` 枚举（现实取值）：`ui, theme, session, memory, tools, skill, workflow, notify, model, dev, fun`。
-> MCP 管理类现实归档：`dev`（`dsh-mcp-panel`、`dsh-mcp-lens` 均 `dev`）。
+> 依据：官方市场仓库 `awesome-dsh-plugin/awesome-dsh-plugin` 的 `README.zh.md` + `contributing.md`（这是**提交 PR 的权威规则**）。
+> 收录方式：**不要手工改 README/plugins.json**——在 `data/plugins/` 新增一个 YAML，由脚本重新生成 README。
+> `category` 可用取值（contributing.md 为准）：`ui usage theme model session memory tools vision skill workflow notify dev market fun`。
+> MCP 管理类归 `dev`（`dsh-mcp-panel`、`dsh-mcp-lens` 均 `dev`）。
 
 ---
 
-## 一、注册条目（可直接粘贴进 `plugins.json` 的 `plugins` 数组）
+## 一、要提交的 PR 内容（单个 YAML 文件）
 
-```json
-{
-  "name": "dsh-mcp-manage",
-  "owner": "wuhobin",
-  "url": "https://github.com/wuhobin/dsh-mcp-manage",
-  "category": "dev",
-  "description": {
-    "en": "Management UI for the official DSH MCP client (dsh-mcp-client): list/add/edit/delete the MCP servers registered in cordis.patch.yml, and run a real MCP initialize connection handshake (streamable-http session / stdio process) per server to see at a glance whether each MCP service connects. Edits are written straight back to cordis.patch.yml.",
-    "zh": "官方 DSH MCP 客户端（dsh-mcp-client）的管理面板：列出/新增/编辑/删除 cordis.patch.yml 中注册的 MCP 服务，并对每个服务建立真实 MCP initialize 连接握手（streamable-http 会话 / stdio 进程）以直观判断各 MCP 服务是否连通。改动直接写回 cordis.patch.yml。"
-  },
-  "npm": "dsh-mcp-manage",
-  "stars": 0,
-  "install": "dsh plugin --profile web add dsh-mcp-manage",
-  "added": "2026-08-17"
-}
+新增文件：**`data/plugins/wuhobin__dsh-mcp-manage.yml`**
+
+```yaml
+url: https://github.com/wuhobin/dsh-mcp-manage
+name: wuhobin/dsh-mcp-manage
+category: dev
+description:
+  en: Management UI for the official DSH MCP client (dsh-mcp-client): list/add/edit/delete the MCP servers in cordis.patch.yml and run a real MCP initialize connection handshake (streamable-http session or stdio process) per server to see at a glance whether each MCP service connects.
+  zh: 官方 DSH MCP 客户端（dsh-mcp-client）的管理面板：列出/新增/编辑/删除 cordis.patch.yml 中注册的 MCP 服务，并对每个服务建立真实 MCP initialize 连接握手（streamable-http 会话或 stdio 进程）以直观判断各 MCP 服务是否连通。
 ```
 
-发布方生成时按需补 `"page": "https://awesome-dsh-plugin.com/p/wuhobin/dsh-mcp-manage/"`（其余条目皆有该派生子段，注册端会自动加或在条目里带上均可）。
+要点（细节来自 contributing.md）：
+
+- `url` 必须与仓库完全一致；`name` 填 **`owner/repo`**（不是 npm 包名）。
+- 只要求 `description.en`；`zh` 可留空由维护者补。描述**只能陈述功能、不得营销/夸大**，且会对代码核对。
+- 描述里含 `: `（冒号+空格）必须给整行加引号，否则 YAML 会解析成嵌套键（上面 en 描述用了 `initialize` 无 `: `，安全）。
+- YAML 提交后要**在本仓库跑 `npm ci && node scripts/generate-readme.mjs`，把重新生成的两个 README 一起提交**。
+- （可选，推荐）把 1–8 张截图加入 `data/screenshots.json`，以仓库 GitHub URL 为 key。
+
+> ⚠️ 之前的 `plugins.json` JSON 条目是市场**生成产物**，不是投稿格式；现按官方规则以 YAML 为准。
 
 ---
 
-## 二、入库前置自查（均已满足）
+## 二、入库门槛核查（**当前未全部满足** —— 见下方结论）
 
-| 检查项 | 状态 |
+| 检查项（contributing.md 硬性要求） | 实测状态 |
 | --- | --- |
-| npm 包存在、`npm` 字段可解析 | ✅ `dsh-mcp-manage` @ npm，已发布 `1.1.0`（2026-08-17） |
-| `url` 是 GitHub 仓库 | ✅ `https://github.com/wuhobin/dsh-mcp-manage`（master `de86b5d`） |
-| `name` 匹配 NPM_NAME_RE（`dsh-mcp-manage`） | ✅ |
-| 是**静态**插件（bundle patch + 客户端 bundle + 入口产物） | ✅ `main=./static/index.js`、`exports["./client"]=./static/client.js`、`dsh.bundle.patch=./static/cordis.patch.yml`、`dsh.client.platform="web"` |
-| 安装方式可复现 | ✅ `pnpm add dsh-mcp-manage` 实测装通（真实 registry） |
-| 与既有 MCP 插件区隔 | ✅ 见下 |
-| 许可证 | ✅ MIT（LICENSE 随包发布） |
+| `package.json` 声明 **`dsh.bundle`**（pr 自动校验，#1 被打回原因） | ✅ master 已提交 `dsh: { bundle: { patch: "./static/cordis.patch.yml" }, client: { platform: "web" }, label }` |
+| 仓库为**静态**插件、真实可用代码（非占位/纯 README） | ✅ 宿主+客户端 bundle+patch 均已实测装通 |
+| 已添加 **`dsh-plugin`** topic | ✅ topics 含 `dsh-plugin`（共 7 个：cordis, deepseek-harness, dsh-plugin, harness, mcp, mcp-client, model-context-protocol） |
+| 仓库**创建满 1 天** | ❌ 创建于 2026-08-17 05:07（约 1 小时前） |
+| **提交数 ≥ 10** | ❌ 现仅 4 条（59d0c4e, f842e31, de86b5d, fab4aff） |
 
 ---
 
@@ -58,17 +58,25 @@
 
 ---
 
-## 四、如何提交（供你确认的几条路径）
+## 四、提交方式与当前结论
 
-市场（`awesome-dsh-plugin.com`）的 `plugins.json` 由站点侧维护，常规提交入口通常是：
+**提交渠道**：给 `awesome-dsh-plugin/awesome-dsh-plugin` 仓库开 PR，新增 `data/plugins/wuhobin__dsh-mcp-manage.yml`（第一节内容），
+并在本仓库/或按市场脚本在本机 `npm ci && node scripts/generate-readme.mjs` 后把重新生成的两个 README 一并提交。PR 标题示例：
+> `Add dsh-mcp-manage (dev) — MCP client config manager + real initialize handshake`
 
-1. **GitHub—给插件市场仓库开 PR**：把上面 JSON 追加到统一 `plugins.json`（或对应分类文件，取决于站点仓库结构），提交信息建议：
-   > `Add dsh-mcp-manage (dev) — MCP client config manager + real initialize handshake`
-2. **站点表单**：若 `awesome-dsh-plugin.com` 提供“提交插件”页，把第一节的 JSON 与第二/三节的说明贴进对应字段。
-3. 想让我协助：可先拉取市场仓库看 `plugins.json` 提交结构，然后我帮你把 diff/PR 本体准备好（需你告知市场仓库地址，或允许我搜索确认）。
+**结论：现在还不能提 PR —— 未过"创建满 1 天 + 提交数 ≥ 10"这道 CI 硬门槛。**
 
-> 说明：本仓库**不能**自行替你在 npm / GitHub 之外向第三方站点写库 —— 发布方账号与站点侧合并由你控制；我能做的是把上面材料整理到完全可粘贴、可提交的程度（已完成），并可按需帮你跑 `pnpm add dsh-mcp-manage` 复验安装。
+- 仓库创建于 2026-08-17 05:07，现约 1 小时；提交仅 4 条。contributing.md 明说这道门槛由 CI 自动检查、专为过滤"PR 前几分钟才建"的仓库；**不是对插件质量的否定**，达标后重新提交即可，不因重新提交受任何影响。
+- 其余门槛均已满足：`dsh.bundle` ✓、`dsh-plugin` topic ✓、真实可装代码 ✓、分类 `dev` 合理 ✓。
+
+**我（本会话）能做 / 不能做**：
+- ✅ 已把 YAML 条目、门槛核对、区隔说明整理到可提交程度（本文件）。
+- ✅ 可帮你复验 `pnpm add dsh-mcp-manage`／`dsh plugin add` 安装仍是通的。
+- ⏳ 可在仓库满 1 天并凑够 ≥10 条真实提交后、正式开 PR（PR 本体 = 一个 YAML + 生成的两个 README）。多出的提交建议是有意义的完善（文档、测试、示例截图、README 截图资产等），不是为凑数而空提交 —— 避免被当成刚建好就刷提交的仓库。
+- ❌ 我不能替你以你的账号向该第三方市场仓库推送。
+
+> 可选推荐项：在仓库加一个 `assets/` 放 1–3 张「设置 → MCP 服务」界面截图，并按规则补进 `data/screenshots.json`（以仓库 URL 为 key），市场详情页即可展示 App Store 风格截图。
 
 ---
 
-*生成于 2026-08-17；版本基线 `dsh-mcp-manage@1.1.0`。*
+*生成于 2026-08-17；版本基线 `dsh-mcp-manage@1.1.0`；依据 `awesome-dsh-plugin/awesome-dsh-plugin` README.zh.md + contributing.md。*
