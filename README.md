@@ -1,6 +1,6 @@
 # dsh-mcp-manage
 
-> **Label: `dsh plugin`** · A [DeepSeek Harness (DSH)][dsh] plugin that adds an **MCP 服务** management page in **Settings**.
+> **Label: `dsh plugin`** · A [DeepSeek Harness (DSH)][dsh] **static market plugin** that adds an **MCP 服务** management page in **Settings**.
 
 Manage the MCP servers DSH registers through `cordis.patch.yml`: list / add / edit / delete each MCP service, and — most importantly — **run a real MCP `initialize` connection handshake** against every server so you can see at a glance whether each MCP service connects normally.
 
@@ -10,35 +10,94 @@ Manage the MCP servers DSH registers through `cordis.patch.yml`: list / add / ed
 
 ---
 
-## TL;DR
+## Install — one command, restart-persistent
 
-- Register a **Settings → MCP 服务** section (`settings.section` → id `mcp-manage`, order 30).
-- Each configured MCP server gets a card with its id / serverName / transport / command-or-url / headers-or-env.
-- A **status badge** (已连接 / 异常 / 未知 …) shows whether the service connects normally.
-- Detecting a service does a **real MCP protocol handshake**, not just a ping:
-  - `streamable-http` → a real authenticated `POST initialize` session via the official MCP SDK.
-  - `stdio` → actually spawns the server command and completes an MCP `initialize` over stdio.
-- Buttons: 添加服务 (create), 编辑 (edit), 删除 (delete), 检测 (probe one), 重新检测全部 (probe all).
-- Changes are persisted back to `cordis.patch.yml` (insert-blocks for `@deepseek-ai/dsh-mcp-client`).
+This is a **static DSH plugin** (the same shape as a plugin-market package): once installed it is a dependency of the
+profile and is loaded by the bundle layer on every boot — it **survives restarts**, no pasting code, no `cordis_define`.
+
+From anywhere a package is installed into a DSH profile:
+
+```bash
+# link straight from this repo
+pnpm add github:wuhobin/dsh-mcp-manage   # or an npm registry entry when published
+
+# restart the dsh process (e.g. `dsh web`), then open Settings → MCP 服务
+```
+
+The package carries a `dsh.bundle.patch` (`static/cordis.patch.yml`) that inserts
+
+```yaml
+- insert:
+    - id: dsh-mcp-manage
+      name: 'dsh-mcp-manage'
+```
+
+so DSH's bundle layer turns it into an **active loader entry** automatically. You only need to add the dependency
+once; the UI page and routes appear after a restart.
+
+> You can also install it through the built-in **插件市场** (plugin market, `dshmarket`) once this package is
+> registered in a market registry — the market's `pnpm add` path is the same mechanism underneath.
 
 ---
 
-## About the DSH plugin model
+## TL;DR (what you get)
 
-DSH is built on [Cordis][cordis]. Dynamic plugins loaded by an agent session (via the `cordis_define` / `cordis_run`
-workflow) run through the **dynamic-plugin runner** (`dsh-cordis-host-runner` / `dsh-cordis-client-runner`), which provides
-a package-private RPC pair:
+- A **Settings → MCP 服务** section (`settings.section` → id `mcp-manage`, order 30).
+- One card per configured MCP server: id / serverName / transport / command-or-url / headers-or-env plus a **status
+  badge** (已连接 / 可达 / 异常 / 未知).
+- 检测 (probe one) / 重新检测全部 run a **real MCP `initialize` handshake**, not a ping:
+  - `streamable-http` → a real authenticated `POST initialize` session via the official MCP SDK.
+  - `stdio` → actually spawns the server command and completes an MCP `initialize` over stdio.
+- 添加服务 / 编辑 / 删除 persist changes straight back to `cordis.patch.yml` (`insert:`-blocks for
+  `@deepseek-ai/dsh-mcp-client`).
 
-- **Host** registers JSON-RPC methods with `harness.handle(name, handler)`.
-- **Client** calls them with `host.call(name, args)`.
-- **Client UI** registers into a Slot (here `settings.section`) with `slots.register({ name, id, order, label }, render)`.
+---
 
-This repository ships the **verified source** for that dynamic plugin (the exact code currently running in this harness),
-plus the standalone Node probe script it shells out to. It is published as a **`dsh plugin` labeled source artifact**
-so the implementation is reviewable, reusable, and easy to re-load in any DSH session.
+## Architecture — this is a real static plugin
 
-> The probe helper (`probe/dsh-mcp-probe.cjs`) is **standalone** — it only needs Node.js and an install of
-> `@modelcontextprotocol/sdk`; it does not depend on DSH and can be exercised directly (see below).
+The dynamic plugin the author originally shipped used the dynamic-runner sandbox APIs (`harness.handle` / `host.call`),
+which only exist inside `dsh-cordis-*-runner`. A **static** plugin runs in the normal (non-sandbox) plane and gets no
+`harness`/`host.call`; it uses the real services instead. This package is ported to that model:
+
+| layer | file | does what |
+| --- | --- | --- |
+| Host (Node) | `static/index.js` | ESM Cordis plugin exporting `name` + `apply(ctx, config)`. `ctx.inject(['webServer'], …)` mounts HTTP routes `/dsh-mcp/list`, `/dsh-mcp/check`, `/dsh-mcp/save`. Uses real `node:fs` / `node:os` / `node:child_process`. |
+| Client (browser) | `static/client.js` | A `window.__ModuleLoader__.load({ id, factory })` bundle (only external is `react`). Registers `settings.section` via `ctx.slots.inject(...)` and `fetch()`es the host routes. |
+| Bundle patch | `static/cordis.patch.yml` | `dsh.bundle.patch` → inserts `{ id: dsh-mcp-manage, name: 'dsh-mcp-manage' }` so the loader activates it. |
+| Probe | `probe/dsh-mcp-probe.cjs` | Standalone real-MCP `initialize` handshake (official `@modelcontextprotocol/sdk`), self-terminating. |
+
+### Host routes
+
+| route | method | purpose |
+| --- | --- | --- |
+| `/dsh-mcp/list` | GET | list servers + the auto-detected profile patch path |
+| `/dsh-mcp/check` | GET | run a real handshake per server → `{id, status, message}` each |
+| `/dsh-mcp/save` | POST | persist the edited server list back to `cordis.patch.yml` (same-origin only) |
+
+### Auto-detection (no hardcoded paths)
+
+The host derives the runtime layout the same way the dynamic host did, but with real Node:
+
+- `DSH_HOME` (an existing `.dsh` directory) **or** `HOME` → `<profilesRoot>`.
+- `profilesRoot = <DSH_HOME>/profiles` (or `<HOME>/.dsh/profiles`).
+- `SDK_ROOT = <profilesRoot>/node_modules`.
+- `PATCH_PATH` = first `<profilesRoot>/<p>/cordis.patch.yml` whose content references `@deepseek-ai/dsh-mcp-client`;
+  `PATCH_DIR` = its directory, where `dsh-mcp-probe.cjs` is written.
+
+---
+
+## Package manifest (what makes it market-installable)
+
+`package.json` satisfies the exact contracts the plugin market and the client loader validate:
+
+- `main` → `./static/index.js` (host entry artifact).
+- `exports["./client"]` → `./static/client.js` (browser bundle).
+- `dsh.client.platform: "web"` (+ optional `inject`).
+- `dsh.bundle.patch` → `static/cordis.patch.yml`.
+- `peerDependencies["@deepseek-ai/cordis"]` ≥ `^4.0.1`.
+
+These match what `dshmarket` itself ships and what `dsh-client-modules` requires
+(`parseDshClient` needs `platform:"web"`, `clientExportOf` needs `exports["./client"]`).
 
 ---
 
@@ -46,82 +105,25 @@ so the implementation is reviewable, reusable, and easy to re-load in any DSH se
 
 ```
 dsh-mcp-manage/
-├── package.json              # dsh manifest, dsh-plugin keywords/label
+├── package.json              # static-plugin manifest (dsh.bundle.patch + dsh.client.platform + main/exports)
 ├── README.md
 ├── LICENSE                   # MIT
-├── plugin/
-│   ├── host.js               # Host half: parse/serialize cordis.patch.yml, spawn probe, expose mcp/list|check|save
-│   └── client.js             # Client half: Settings → MCP 服务 UI + status badges
+├── static/
+│   ├── index.js              # Host: ESM Cordis plugin → webServer routes list/check/save
+│   ├── client.js             # Client: __ModuleLoader__.load bundle → Settings → MCP 服务 UI
+│   └── cordis.patch.yml      # dsh.bundle.patch → inserts { id, name } into the composed entry list
 ├── probe/
-│   └── dsh-mcp-probe.cjs     # Standalone real-MCP-initialize handshake (official @modelcontextprotocol/sdk)
-└── test-parse.js             # YAML subset parse test used during development
+│   └── dsh-mcp-probe.cjs     # Standalone real-MCP-initialize handshake
+└── test-parse.js             # YAML-subset parse test used during development
 ```
+
+> `plugin/` (the original **dynamic** `harness.handle`/`host.call` version) is kept in the git history for reference;
+> the installable package uses `static/`. If you want the dynamic, session-only variant instead, see the
+> `plugin/*.js` source in an earlier commit.
 
 ---
 
-## How it works
-
-### Host half (`plugin/host.js`)
-
-1. Reads `cordis.patch.yml` with a small YAML **subset** parser that understands the insert-block shape used by
-   `@deepseek-ai/dsh-mcp-client` (`- insert: [ { id, name, config: {...} } ]`).
-2. Exposes three package-private JSON-RPC methods:
-
-   | method | purpose |
-   | --- | --- |
-   | `mcp/list` | list servers + the profile path |
-   | `mcp/check` | run a real handshake per server, return `{status, message}` per server |
-   | `mcp/save` | persist the edited server list back to `cordis.patch.yml` |
-
-3. `mcp/check` shells out to `probe/dsh-mcp-probe.cjs` in a dedicated `node` subprocess (via the DSH `subprocess`
-   service), passing the server spec as JSON (transport / command / args / env / url / headers), then parses the
-   returned `RESULT{...}` line.
-
-### Standalone probe (`probe/dsh-mcp-probe.cjs`)
-
-Builds the correct transport from the SDK:
-
-```js
-stdio               -> new StdioClientTransport({ command, args, env, cwd })
-streamable-http     -> new StreamableHTTPClientTransport(new URL(url), { requestInit: { headers } })
-```
-
-then performs a **real** `client.connect(transport)` (an actual MCP `initialize`), reports
-`RESULT{"ok":true,"name":...,"ver":...}` or `RESULT{"ok":false,"error":...}`, and exits.
-A hard 15s timeout self-terminates the process so the harness/browser never hangs.
-Credentials (e.g. `Authorization: Bearer …`, `GITHUB_PERSONAL_ACCESS_TOKEN`) go only into the probe process; the
-result reports only `ok` / `name` / `ver` / `error`, never the headers.
-
-### Client half (`plugin/client.js`)
-
-Renders the Settings section, keeps in-memory state, and calls the host methods over `host.call`. After a check it
-labels each server with a status badge:
-
-| status | label |
-| --- | --- |
-| `ok` | 已连接 (green) |
-| `reachable` | 可达 |
-| `errror` / `unreachable` | 异常 (red) |
-| `unknown` | 未知 |
-| `checking` | 检测中 |
-
----
-
-## Loading it into a DSH session
-
-Because DSH currently catalogues **dynamic** plugins as the authored path, load this plugin in any agent session that
-has the `cordis` (dynamic plugin) preset enabled by pasting its host/client source into `cordis_define`:
-
-1. `cordis_define` a new Plugin, e.g. `idPrefix: "mcpsv", name: "MCP Server Manager"`:
-   - `code.host` ← contents of `plugin/host.js`
-   - `code.client` ← contents of `plugin/client.js`
-2. `cordis_run` to activate.
-3. Open **Settings → MCP 服务** to manage and probe the configured MCP servers.
-
-The probe script is written to the profile directory (`<profile>/dsh-mcp-probe.cjs`) by the host on startup, so a
-restart of the plugin keeps the fixed helper.
-
-### Directly exercising the probe (no DSH needed)
+## Standalone probe (no DSH needed)
 
 ```bash
 # stdio server
@@ -133,11 +135,14 @@ node probe/dsh-mcp-probe.cjs "{\"sdkRoot\":\"/abs/path/node_modules\",\"transpor
 
 `probe` is also wired as an npm script: `npm run probe -- "<spec-json>"`.
 
+Credentials (e.g. `Authorization: Bearer …`, `GITHUB_PERSONAL_ACCESS_TOKEN`) go only into the probe process; the
+result reports only `ok` / `name` / `ver` / `error`, never the headers.
+
 ---
 
 ## Acknowledgements
 
-- [DeepSeek Harness][dsh] for the dynamic-plugin runtime (`harness.handle` / `host.call` / `slots`).
+- [DeepSeek Harness][dsh] for the static-plugin load path (`dsh.bundle.patch` / `dsh.client` / `webServer` / client-modules).
 - [Model Context Protocol SDK][mcp-sdk] (`@modelcontextprotocol/sdk`) for the real `initialize` handshake.
 - [Cordis][cordis] for the plugin/event/service framework.
 
