@@ -1,0 +1,48 @@
+{
+  "name": "dsh-mcp-manage",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A DeepSeek Harness (DSH) plugin that adds an 'MCP 服务' management page in Settings: list / add / edit / delete the MCP servers registered in cordis.patch.yml, and run a real MCP initialize connection handshake per server to verify each service connects normally.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "dsh plugin",
+    "deepseek-harness",
+    "cordis",
+    "harness",
+    "mcp",
+    "model-context-protocol",
+    "mcp-client",
+    "plugin"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "probe": "node probe/dsh-mcp-probe.cjs"
+  },
+  "dsh": {
+    "kind": "dynamic-plugin",
+    "platforms": ["host", "client"],
+    "entry": {
+      "host": "plugin/host.js",
+      "client": "plugin/client.js"
+    },
+    "slot": "settings.section",
+    "slotId": "mcp-manage",
+    "rpc": {
+      "calls": ["mcp/list", "mcp/check", "mcp/save"]
+    },
+    "probe": "probe/dsh-mcp-probe.cjs",
+    "sdk": "@modelcontextprotocol/sdk",
+    "label": "dsh plugin"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "plugin",
+    "probe",
+    "README.md",
+    "LICENSE"
+  ]
+}
