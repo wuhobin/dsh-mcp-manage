@@ -44,12 +44,54 @@ return {
   inject: ['fs'],
   async apply(ctx) {
     const fs = ctx.fs
-    const PATCH_PATH = 'C:/Users/12890/.dsh/profiles/web/cordis.patch.yml'
-    const PATCH_DIR = 'C:/Users/12890/.dsh/profiles/web'
-    // Absolute path to a node_modules tree containing @modelcontextprotocol/sdk (>=1.30) + zod (hoisted).
-    const SDK_DIR = 'C:/Users/12890/AppData/Local/npm-cache/_npx/1e7f6d9597241db0/node_modules'
+    const subprocess = ctx.get('subprocess')
     const CLIENT_NAME = '@deepseek-ai/dsh-mcp-client'
-    const PROBE_FILE = PATCH_DIR + '/dsh-mcp-probe.cjs'
+
+    // ---- Auto-detect runtime paths (no hardcoded absolute paths) ----
+    // The dynamic Host sandbox exposes no process/env, so we derive $HOME by
+    // spawning a tiny `node -e` and reading its stdout (same spawn pattern the
+    // probe uses). Everything else derives from $HOME:
+    //   SDK_ROOT   = $HOME/.dsh/profiles/node_modules   (holds @modelcontextprotocol/sdk + zod + dsh-mcp-client)
+    //   patch      = first $HOME/.dsh/profiles/<p>/cordis.patch.yml that references the mcp-client package
+    function dirOf(p) { const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\')); return i > 0 ? p.slice(0, i) : p }
+    async function detectHome() {
+      if (!subprocess) return ''
+      let nodeExe = null
+      try { nodeExe = await subprocess.resolveExecutable('node', {}) } catch (e) { nodeExe = null }
+      if (!nodeExe) return ''
+      const code = 'process.stdout.write(String(process.env.HOME||process.env.USERPROFILE||""))'
+      try {
+        const h = subprocess.spawn({ argv: [nodeExe, '-e', code], stdio: { stdin: 'ignore', stdout: { maxBytes: 8192 }, stderr: { maxBytes: 8192 } }, graceMs: 3000 })
+        await h.done
+        const r = h.collected && h.collected.stdout ? h.collected.stdout.readFrom(0) : null
+        return (r && r.text) ? r.text.replace(/[\r\n]+$/, '').trim() : ''
+      } catch (e) { return '' }
+    }
+    async function locatePatch(profilesRoot) {
+      let dirTarget = null
+      try { dirTarget = await fs.resolve(profilesRoot) } catch (e) { return '' }
+      let entries = []
+      try { entries = await fs.listDir(dirTarget) } catch (e) { return '' }
+      let fallback = ''
+      for (const e of entries) {
+        const en = (e && (typeof e.name === 'string' ? e.name : String((e.path) || ''))) || ''
+        if (!en) continue
+        const yml = profilesRoot + '/' + en + '/cordis.patch.yml'
+        let ok = false
+        try { const t = await fs.resolve(yml); ok = !!t } catch (e) { ok = false }
+        if (!ok) continue
+        if (!fallback) fallback = yml
+        try { const c = await fs.readText(await fs.resolve(yml)); if (c.indexOf(CLIENT_NAME) >= 0) return yml } catch (e) {}
+      }
+      return fallback
+    }
+    const home = await detectHome()
+    const profilesRoot = home ? home + '/.dsh/profiles' : ''
+    // Absolute path to a node_modules tree containing @modelcontextprotocol/sdk (>=1.30) + zod (hoisted).
+    const SDK_DIR = profilesRoot ? (profilesRoot + '/node_modules') : ''
+    const PATCH_PATH = profilesRoot ? await locatePatch(profilesRoot) : ''
+    const PATCH_DIR = PATCH_PATH ? dirOf(PATCH_PATH) : (home ? home + '/.dsh/profiles' : '')
+    const PROBE_FILE = PATCH_DIR ? (PATCH_DIR + '/dsh-mcp-probe.cjs') : ''
     // Write the standalone probe helper used for connection checks (survives a plugin restart).
     try { const ft = await fs.resolve(PROBE_FILE); await fs.writeText(ft, HELPER_SRC) } catch (e) {}
 
@@ -201,6 +243,7 @@ return {
     }
     function partToText(p) { return p.kind === 'text' ? p.lines.join('\n') : (typeof p.raw === 'string' ? p.raw : serializeServer(p.server)) }
     async function readParts() {
+      if (!PATCH_PATH) return { exists: false, parts: [], detectError: '未能自动定位 cordis.patch.yml（未找到 $HOME/.dsh/profiles/*/cordis.patch.yml）' }
       const target = await fs.resolve(PATCH_PATH); const info = await fs.stat(target)
       if (!info) return { exists: false, parts: [] }
       const content = await fs.readText(target); return { exists: true, parts: splitParts(content) }
@@ -222,6 +265,7 @@ return {
     async function checkOne(s) {
       const subp = ctx.get('subprocess')
       if (subp === undefined) return { status: 'unknown', message: 'subprocess 服务不可用，无法建立连接' }
+      if (!PROBE_FILE || !SDK_DIR) return { status: 'error', message: '未能自动定位 SDK 或探测脚本，无法握手' }
       let nodeExe = null
       try { nodeExe = await subp.resolveExecutable('node', {}) } catch (e) { nodeExe = null }
       if (!nodeExe) return { status: 'error', message: '无法定位 node 可执行文件，无法握手' }
@@ -251,7 +295,8 @@ return {
 
     // List the MCP servers from cordis.patch.yml.
     harness.handle('mcp/list', async () => {
-      try { const { exists, parts } = await readParts(); const entries = toListResult(parts); return { ok: true, exists, path: PATCH_PATH, entries, entryCount: entries.length } }
+      try { const { exists, parts, detectError } = await readParts(); const entries = toListResult(parts); if (detectError) return { ok: false, exists: false, path: PATCH_PATH, entries: [], error: detectError }
+        return { ok: true, exists, path: PATCH_PATH, entries, entryCount: entries.length } }
       catch (e) { return { ok: false, exists: false, path: PATCH_PATH, entries: [], error: String((e && e.message) || e) } }
     })
 
