@@ -15,16 +15,49 @@ Manage the MCP servers DSH registers through `cordis.patch.yml`: list / add / ed
 This is a **static DSH plugin** (the same shape as a plugin-market package): once installed it is a dependency of the
 profile and is loaded by the bundle layer on every boot — it **survives restarts**, no pasting code, no `cordis_define`.
 
-From anywhere a package is installed into a DSH profile:
+### ✅ Recommended (use the DSH wrapper, not bare `pnpm add`)
 
 ```bash
-# link straight from this repo
-pnpm add github:wuhobin/dsh-mcp-manage   # or an npm registry entry when published
-
-# restart the dsh process (e.g. `dsh web`), then open Settings → MCP 服务
+dsh plugin --profile web add dsh-mcp-manage
 ```
 
-The package carries a `dsh.bundle.patch` (`static/cordis.patch.yml`) that inserts
+- This runs `pnpm add`, then **auto-reconciles** `dsh.profile.bundles` in `<profile>/package.json`: because the package
+  declares `dsh.bundle`, it joins the profile layer stack automatically. **No manual `insert:` editing** — DSH reads the
+  package's `dsh.bundle.patch` (`static/cordis.patch.yml`) at boot and turns it into an active loader entry.
+- The plugin's host and client load on the **next DSH start**, so **restart DSH** (e.g. stop and relaunch `dsh web`),
+  then open **Settings → MCP 服务**. If the page doesn't appear, hard-refresh the browser (Ctrl/Cmd+Shift+R).
+
+> ⚠️ **Gotcha:** a bare `pnpm add dsh-mcp-manage` installs the package into `node_modules` and `dependencies` but does
+> **not** add it to `dsh.profile.bundles` — so it never becomes a loaded layer and the page won't appear after restart.
+> Always install through `dsh plugin ... add`, which does the reconcile step for you.
+
+### If `dsh` is not on your PATH
+
+`dsh` is shipped as a `npx`/npm-cache binary, so a terminal that lacks the right PATH may report `dsh: not recognized`.
+Any of these works:
+
+```bash
+# 1) new terminal (often fixes PATH) then the normal form:
+dsh plugin --profile web add dsh-mcp-manage
+
+# 2) wrap in npx — independent of PATH:
+npx --yes @deepseek-ai/dsh plugin --profile web add dsh-mcp-manage
+
+# 3) invoke the packed bin directly with node (never depends on PATH):
+node "<npm-cache>\_npx\<hash>\node_modules\@deepseek-ai\dsh\lib\bin.js" plugin --profile web add dsh-mcp-manage
+```
+
+### Upgrading a later version
+
+After you bump the version and publish a new release, update the installed copy, then restart DSH:
+
+```bash
+dsh plugin --profile web update dsh-mcp-manage
+```
+
+### What happens under the hood
+
+The package carries a `dsh.bundle.patch` (`static/cordis.patch.yml`):
 
 ```yaml
 - insert:
@@ -33,10 +66,10 @@ The package carries a `dsh.bundle.patch` (`static/cordis.patch.yml`) that insert
 ```
 
 so DSH's bundle layer turns it into an **active loader entry** automatically. You only need to add the dependency
-once; the UI page and routes appear after a restart.
+once (through `dsh plugin ... add`); the UI page and routes appear after a restart.
 
 > Its manifest is also compatible with the built-in plugin market (`dshmarket`), so it **could** be listed there too —
-> but this package is primarily distributed as an npm package: `pnpm add dsh-mcp-manage`.
+> but this package is primarily distributed as an npm package installed via `dsh plugin ... add dsh-mcp-manage`.
 
 ---
 
