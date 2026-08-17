@@ -55,6 +55,19 @@ After you bump the version and publish a new release, update the installed copy,
 dsh plugin --profile web update dsh-mcp-manage
 ```
 
+### Uninstalling
+
+```bash
+dsh plugin --profile web remove dsh-mcp-manage
+```
+
+This runs `pnpm remove` **and** reconciles `dsh.profile.bundles`, so the package is removed from `node_modules`, from
+`dependencies`, and from the profile layer stack in one command — no manual `cordis.patch.yml` edits needed. The change
+takes effect on the **next DSH restart** (the already-running process keeps the old layer until then).
+
+> As with install, use the `dsh plugin ...` wrapper rather than a bare `pnpm remove` — the wrapper is what also drops the
+> entry from `dsh.profile.bundles`; a bare `pnpm remove` would leave a stale bundle-layer reference.
+
 ### What happens under the hood
 
 The package carries a `dsh.bundle.patch` (`static/cordis.patch.yml`):
